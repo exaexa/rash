@@ -1,0 +1,90 @@
+                    __    
+  .----.---.-.-----.  |--.
+  |   _|  _  |__ --|     |
+  |__| |___._|_____|__|__|
+
+      RAcing in baSH
+
+ >>> Contents
+
+ * Authors
+ * Description
+ * System requirements
+ * Options
+ * Notice
+ * Important notice
+ * TODO list
+ * License
+ * Contact
+
+ >>> Authors
+
+  Written by Mirek [exa] Kratochvil
+  (because of UNIX course on DoM&Ph on Charles' University in Prague)
+
+ >>> Description
+
+  This is a very simple racing game simulator for all Unices equipped with 
+  Bash and terminal. You have a car, track with dangerous curves and some
+  lame drivers which are constantly attempting to do bad stuff (crashes).
+  You have 100%HP when you start. Driving on grass will decrease HP.
+  Driving into other cars will decrease HP, as well. If you find yourself
+  having 0%HP, you are dead and the race ends. Target is to drive as far
+  as you can. (and please don't ask why)
+
+ >>> System requirements
+
+  You should have BASH installed, and run the game on vt-100 compatible
+  terminal. This means RASH should run on most linuxes of non-historical
+  versions. Tested (coded) on 2.6 linux, bash 3.1, in Eterm, Konsole and
+  the linux framebuffer console. Minimal console size is 80x24 and please
+  avoid resizing after Rash has started (well you'll see).
+
+  NOTE: It's cooler if you have 'figlet' installed.
+
+ >>> Options
+
+  Please see `rash --help`
+
+ >>> Notice
+
+  Because of obvious Bash limitations, steering is not "analog" as you are
+  probably used from other games, but more "switched". If you press [A]
+  it starts to steer left, so when you feel like leftish-enough, press [W]. :]
+  Of course, there's also a key for steering right known by all those who ever
+  played Quake.
+
+ >>> Important notice
+
+  If you feel satisfied after playing Rash, you should send me money. Use
+  Paypal and send $1. If I get $50, I'll write new version. You could also be
+  interested in my other project at http://pumlic.sf.net/
+
+ >>> TODO list
+
+  This is a list of some things I could add in the future (especially if I
+  received that donation mentioned above):
+
+   * Some collision/explosion effects - white&yellow stars should be sufficient
+   * Improved controls (real non-blocking read?)
+   * Improved difficulty calculation/interpretation
+   * Mouse support (gpm hackoff?)
+   * Sound effects ( /dev/dsp ? asynchronous aplay? )
+
+  And what certainly *won't* miss in next release: 
+
+   * 3D Rendering
+
+ >>> License
+
+  This program is licensed under GNU General Public License v2. Make sure you
+  have read and understood it before you run, use or modify the program.
+  License is attached to this package in file 'LICENSE'. If you don't have it
+  or it can't be correctly read, please mail FSF for it. Many copies should
+  also be available on the Internet.
+
+ >>> CONTACT
+
+  Mirek [exa] Kratochvil, exa dot exa at gmail dot com
+
+

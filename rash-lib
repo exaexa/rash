@@ -1,0 +1,439 @@
+#!/bin/bash
+
+# This software is free, in the meaning of Freedom, licenced under GPLv2
+# Make sure you understand the Licence before you use it anohow.
+# Please note that you are welcome to redistribude this program, if you
+# do it in some Licence-compliant way.
+
+# Writen by Mirek [exa] Kratochvil 2007
+
+# This is the actual RASH game code. Entrypoint is rash_game func.
+
+
+# Global declarations
+
+WIDTH=`tput cols`
+HEIGHT=23
+
+function echo_center () {
+	echo -e "\033[$(( ($WIDTH - ${#1} ) / 2 ))C$1"
+}
+
+BANNER=echo_center
+which figlet &>/dev/null && BANNER="figlet -w ${WIDTH} -f slant -c"
+[ $BANNER_PROGRAM ] && BANNER=$BANNER_PROGRAM
+
+#Graphics
+
+COLOR_NORMAL="\e[0m"
+COLOR_DARK="\e[1;30m"
+COLOR_RED="\e[1;31m"
+COLOR_GREEN="\e[0;32m"
+COLOR_YELLOW="\e[1;33m"
+COLOR_BLUE="\e[1;34m"
+COLOR_CYAN="\e[1;36m"
+COLOR_WHITE="\e[1;37m"
+
+ENEMY_LINE[0]="${COLOR_WHITE}.${COLOR_CYAN}-${COLOR_WHITE}."
+ENEMY_LINE[1]="${COLOR_CYAN}|_|"
+ENEMY_LINE[2]="${COLOR_RED}'${COLOR_CYAN}^${COLOR_RED}'"
+
+CAR_LINE[0]="${COLOR_YELLOW}.${COLOR_WHITE}xx${COLOR_YELLOW}."
+CAR_LINE[1]="${COLOR_BLUE}|${COLOR_DARK}__${COLOR_BLUE}|"
+CAR_LINE[2]="${COLOR_BLUE}'${COLOR_RED}..${COLOR_BLUE}'"
+
+
+ROAD_BORDER="#"
+
+#eye candy
+ROAD_MARK="|"
+GRASS[0]=","
+GRASS[1]="."
+GRASS[2]="_"
+GRASS[3]="w"
+GRASS[4]="%"
+GRASS[5]="'"
+GRASS[6]="\""
+GRASS[7]="~"
+
+# even line flag
+EVEN_LINE=0
+
+function switch_even () {
+	[ $EVEN_LINE -ne 0 ]
+	EVEN_LINE=$?
+}
+
+function is_even_line () {
+	return $EVEN_LINE
+}
+
+# "keyboard" routines
+
+function read_key () {
+	cat $KEY_TEMP
+}
+
+function reset_key () {
+	cat /dev/null > $KEY_TEMP
+}
+
+function wait_for_key () {
+	a=""
+	while [ -z "$a" ] ; do read a < $KEY_TEMP ; sleep 0.2 ; done
+}
+
+#output routines
+
+function linedown () {  # move cursor n lines down
+	[ $1 -le 0 ] && return 0
+	echo -ne "\033[$1B\r"
+}
+
+function banner () {  #draw a banner (shortcut)
+	${BANNER} "$1"
+}
+
+function main_screen () { # "Menu" screen
+
+	COUNTER=0
+	local K=""
+	clear
+	linedown 5
+	echo -e "${COLOR_RED}"
+	banner 'rash'
+	echo -e "${COLOR_BLUE}"
+	echo_center "racing in bash"
+	linedown 3
+	echo -e "${COLOR_WHITE}"
+	echo_center "Controls: [A]/[D]/[W]"
+	echo_center "Press [q] to quit"
+	echo -e "${COLOR_BLUE}"
+	echo_center "Press [ANY] key to start"
+
+	while true ; do
+		wait_for_key
+		K="`read_key`"
+		reset_key
+		case "$K" in
+			q|Q) return 1 ;;
+			*) return 0 ;;
+		esac
+	done
+}
+
+function rash_game () {  #Entry point. Runs the "Game cycle"
+	while true ; do
+		main_screen || return 0	
+		main_game
+		score_screen || return 0
+	done
+}
+
+function score_screen () { # Screen about how many KMs player managed to drive
+	clear
+	linedown 5
+	echo -e "${COLOR_RED}"
+	banner "game over"
+	echo -e "${COLOR_WHITE}"
+	echo_center "you managed to travel"
+	echo -e "${COLOR_GREEN}"
+	banner "$(($COUNTER / 1000)) km"
+	local K=""
+	while true ; do
+		wait_for_key
+		K="`read_key`"
+		reset_key
+		case "$K" in
+			q|Q) return 1 ;;
+			*) return 0 ;;
+		esac
+	done
+}
+
+COUNTER=0
+CURKEY=""
+
+function main_game () {  #Game loop
+	reset_track
+
+	# countdown
+	echo -e "${COLOR_BLUE}"
+	for msg in "3" "2" "1" "go!" ; do
+		clear
+		linedown 10
+		banner "$msg"
+		sleep 1
+	done
+		
+	while [ $CAR_HEALTH -gt 0 ] ; do
+		CURKEY="`read_key`" #CURKEY can be used globally.
+		reset_key
+		if [ "$CURKEY" = "q" ] ; then
+			clear ; return 0
+		fi
+		update_track
+		update_player
+		update_enemies
+		check_collision
+		#If we drive over the roadmark (every 50 steps), regenerate HP
+		if [ $(( $COUNTER % 50 )) -eq $(( $HEIGHT - 4 )) ] ; then
+			let ++CAR_HEALTH
+		fi
+		[ $CAR_HEALTH -gt 100 ] && CAR_HEALTH=100
+		let ++COUNTER
+		#draw it
+		draw_track
+		draw_player
+		draw_enemies
+		db_draw
+		sleep 0.02
+	done
+}
+
+# Set track to the start-state
+function reset_track () {
+
+	ROAD_LEFT=$(( $WIDTH / 3 )) 
+	ROAD_SIZE=$ROAD_LEFT
+	STEER=0
+	PLAYER_STEER=0
+	COUNTER=0
+	ENEMY_COUNT=0
+
+	local i=0
+	while [ $i -lt $HEIGHT ] ; do
+		ROAD_L[$i]=$ROAD_LEFT
+		ROAD_S[$i]=$ROAD_SIZE
+		ROAD_LINE[$i]=""
+		compute_track_line $i
+		switch_even
+		let i++
+	done
+	CAR_POS=$(( $WIDTH / 2 ))
+	CAR_HEALTH=100
+}
+
+
+# render ROAD_L[$1] and ROAD_S[$1] to ROAD_LINE[$1]
+function compute_track_line () {
+	local i=$1
+	local line="${COLOR_GREEN}"
+	
+	if is_even_line ; then border_color="${COLOR_RED}"
+	else border_color="${COLOR_WHITE}"; fi
+
+	local j=0
+	while [ $j -lt ${ROAD_L[$i]} ] ; do
+		line="${line}${GRASS[$(($RANDOM % 8))]}"
+		let ++j
+	done
+
+	line="${line}${border_color}${ROAD_BORDER}${COLOR_DARK}"
+	j=2
+	if [ $(( $COUNTER % 50 )) -eq 49 ] ; then 
+		barcolor=0
+		while [ $j -lt ${ROAD_S[$i]} ] ; do
+			if [ $(( $barcolor % 2 )) -eq 0 ] ; then
+				line="${line}${COLOR_YELLOW}/"
+			else
+				line="${line}${COLOR_DARK}#"
+			fi
+			let j++
+			let barcolor++
+		done
+	else
+		while [ $j -lt ${ROAD_S[$i]} ] ; do
+			if [ $(( $RANDOM %30 )) -ne 0 ] ; then
+				line="${line} "
+			else
+				line="${line}|"
+			fi
+			let j++
+		done
+	fi
+	line="${line}${border_color}${ROAD_BORDER}${COLOR_GREEN}"
+	j=$(( ${ROAD_L[$i]} + ${ROAD_S[$i]} ))
+	while [ $j -lt $WIDTH ] ; do
+		line="${line}${GRASS[$(($RANDOM % 8))]}"
+		let j++
+	done
+	
+	ROAD_LINE[$i]=$line
+}
+
+#Move track one step down
+function update_track () {
+	local i=$(( $HEIGHT - 1 ))
+	while [ $i -gt 0 ] ; do
+		ROAD_L[$i]=${ROAD_L[$(( $i-1 ))]}
+		ROAD_S[$i]=${ROAD_S[$(( $i-1 ))]}
+		ROAD_LINE[$i]=${ROAD_LINE[$(( $i-1 ))]}
+		let --i
+	done
+	ROAD_L[0]=$ROAD_LEFT
+	ROAD_S[0]=$ROAD_SIZE
+	ROAD_LINE[0]=""
+	compute_track_line $i
+	switch_even
+
+	#Now we should set some new track params!
+	if [ $(( $RANDOM %20 )) -eq 0 ] ; then
+		t=$(( ( $RANDOM % 7 ) - 3 ))
+		ROAD_LEFT=$(( $ROAD_LEFT - ( $t / 2 ) ))
+		ROAD_SIZE=$(( $ROAD_SIZE + ( $t - ( $t / 2 ) ) ))
+	fi
+
+	if [ $ROAD_SIZE -lt 12 ] ; then ROAD_SIZE=12 ; fi
+	if [ $ROAD_SIZE -gt 70 ] ; then ROAD_SIZE=70 ; fi
+
+	if [ $(( $RANDOM %3 )) -eq 0 ] ; then
+		STEER=$(( $RANDOM %3 -1 ))
+	fi
+	ROAD_LEFT=$(( $ROAD_LEFT + $STEER ))
+
+	if [ $ROAD_LEFT -lt 3 ] ; then ROAD_LEFT=3 ; fi
+	if [ $ROAD_LEFT -gt $(( $WIDTH - 3 - $ROAD_SIZE )) ] ;
+		then ROAD_LEFT=$(( $WIDTH - 3 - $ROAD_SIZE )) ; fi
+}
+
+#draw track lines
+function draw_track () {
+	local i=0
+	db_echo "\033[${HEIGHT}A\r"
+	while [ $i -lt $HEIGHT ] ; do
+		db_echo "${ROAD_LINE[$i]}\n"
+		let ++i
+	done
+
+	if [ $CAR_HEALTH -gt 66 ] ; then db_echo "${COLOR_GREEN}"
+	else if [ $CAR_HEALTH -gt 33 ] ; then db_echo "${COLOR_YELLOW}"
+	else db_echo "${COLOR_RED}"
+	fi ; fi
+
+	db_echo "${CAR_HEALTH}%${COLOR_GREEN}HP \
+${COLOR_WHITE}${COUNTER}${COLOR_BLUE}m travelled  "
+	db_echo "\033[${HEIGHT}A\r"
+
+}
+
+#draw player car
+function draw_player () {
+	db_echo "\033[$((HEIGHT-5))B\033[$((CAR_POS-2))C${CAR_LINE[0]}\033[1B\033[4D${CAR_LINE[1]}\033[1B\033[4D${CAR_LINE[2]}"
+}
+
+# -1 = left, 0 = fwd, 1 = right
+PLAYER_STEER=0
+
+# move player/change steering
+function update_player () {
+	case $CURKEY in
+	a|A) PLAYER_STEER=-1 ;;
+	w|W) PLAYER_STEER=0 ;;
+	d|D) PLAYER_STEER=1 ;;
+	esac
+	CAR_POS=$(( $CAR_POS + $PLAYER_STEER ))
+	[ $CAR_POS -lt 2 ] && CAR_POS=2
+	[ $CAR_POS -gt $(( $WIDTH - 3 )) ] && CAR_POS=$(( $WIDTH - 3 ))
+}
+
+
+# handling of the "enemy" cars
+
+ENEMY_COUNT=0
+
+#remove the enemy which can't be seen anymore
+function delete_enemy () {
+	local i=$1
+	[ $i -ge $ENEMY_COUNT ] && return 1
+	[ $i -lt 0 ] && return 1
+	let --ENEMY_COUNT
+	[ $ENEMY_COUNT -eq 0 ] && return 0
+	ENEMY_X[$i]=${ENEMY_X[$ENEMY_COUNT]}
+	ENEMY_Y[$i]=${ENEMY_Y[$ENEMY_COUNT]}
+}
+
+#Randomly generate one enemy
+function generate_enemy () {
+	ENEMY_X[$ENEMY_COUNT]=$(( $ROAD_LEFT + 
+		( $RANDOM % ($ROAD_SIZE - 3 ) ) ));
+	ENEMY_Y[$ENEMY_COUNT]=0
+	let ++ENEMY_COUNT
+}
+
+# Move enemies, delete enemies, generate some random enemies
+function update_enemies () {
+	local i=0
+	while [ $i -lt $ENEMY_COUNT ] ; do 
+		ENEMY_Y[$i]=$(( ${ENEMY_Y[$i]} + 1 ))
+		let ++i
+	done
+	i=0
+	while [ $i -lt $ENEMY_COUNT ] ; do
+		if [ ${ENEMY_Y[$i]} -ge $(( $HEIGHT + 3 )) ] ; then 
+			delete_enemy $i
+		fi
+		let ++i
+	done
+
+	if [ $(( $RANDOM % ( 5 * ( $ENEMY_COUNT + 1) + 70 - $ROAD_SIZE ) )) -eq 0 ] ; then
+		generate_enemy	
+	fi
+}
+
+#drawer
+function draw_enemies () {
+	local i=0
+	while [ $i -lt $ENEMY_COUNT ] ; do 
+		db_echo "\033[${HEIGHT}A\r\033[${ENEMY_X[$i]}C"
+		[ ${ENEMY_Y[$i]} -ge 3 ] && 
+			db_echo "\033[$(( ${ENEMY_Y[$i]} - 2 ))B"
+
+		[ ${ENEMY_Y[$i]} -ge 2 ] && 
+		[ ${ENEMY_Y[$i]} -lt $(( $HEIGHT + 2 )) ] && 
+			db_echo "${ENEMY_LINE[0]}\033[1B\033[3D"
+		[ ${ENEMY_Y[$i]} -ge 1 ] &&
+		[ ${ENEMY_Y[$i]} -lt $(( $HEIGHT + 1 )) ] && 
+			db_echo "${ENEMY_LINE[1]}\033[1B\033[3D"
+		[ ${ENEMY_Y[$i]} -lt $HEIGHT ] &&
+			db_echo "${ENEMY_LINE[2]}\033[1B\033[3D"
+		let ++i
+	done
+
+}
+
+#because calling multiple echos is kinda expensive, we shall use buffering
+DRAWBUF=""
+
+function db_echo () {
+	DRAWBUF="${DRAWBUF}${1}"
+}
+
+function db_draw () {
+	echo -ne "$DRAWBUF"
+	DRAWBUF=""
+}
+
+
+#help vars
+car_start=$(($HEIGHT - 5 ))
+car_end=$(($HEIGHT - 3 ))
+
+function check_collision () {
+	#Check if tyres are on grass.
+	[ $(($CAR_POS - 2 )) -lt ${ROAD_L[$car_start]} ] && let --CAR_HEALTH
+	[ $(($CAR_POS - 2 )) -lt ${ROAD_L[$car_end]} ] && let --CAR_HEALTH
+	[ $(($CAR_POS+2)) -gt $((${ROAD_L[$car_start]} + ${ROAD_S[$car_start]} )) ] && let --CAR_HEALTH
+	[ $(($CAR_POS+2)) -gt $((${ROAD_L[$car_end]} + ${ROAD_S[$car_end]} )) ] && let --CAR_HEALTH
+
+	#Colliding a car hurts a little bit more
+	local i=0
+	while [ $i -lt $ENEMY_COUNT ] ; do
+		[ ${ENEMY_Y[$i]} -ge $car_start ] &&
+		[ ${ENEMY_Y[$i]} -le $HEIGHT ] &&
+		[ ${ENEMY_X[$i]} -gt $(( $CAR_POS - 5 )) ] &&
+		[ ${ENEMY_X[$i]} -lt $(( $CAR_POS + 2 )) ] &&
+		let CAR_HEALTH-=8
+		let ++i
+	done
+}

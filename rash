@@ -1,0 +1,149 @@
+#!/bin/bash
+
+# This software is free, in the meaning of Freedom, licenced under GPLv2
+# Make sure you understand the Licence before you use it anohow.
+# Please note that you are welcome to redistribude this program, if you
+# do it in some Licence-compliant way.
+
+# Writen by Mirek [exa] Kratochvil 2007
+
+VERSION="1.0-rc3"
+
+#Parsing command line
+ARG_ERROR=""
+PRINT_HELP=""
+PRINT_VERSION=""
+PRINT_LICENSE=""
+
+while [ -n "$1" ] ; do
+	case "$1" in
+	"--help")
+		PRINT_HELP="y"
+		;;
+	"--version")
+		PRINT_VERSION="y"
+		;;
+	"--license")
+		PRINT_LICENSE="y"
+		;;
+	*)	
+		ARG_ERROR="$1"
+		;;
+
+	esac
+	shift
+done
+
+
+function print_arg_error() {
+	echo "rash: Unrecognized option $ARG_ERROR "
+}
+
+function print_help() {
+	cat <<END
+RASH, RAcing in baSH
+Usage: rash [ options ]
+Options:
+  --help      show this help
+  --version   show version
+  --license   show license info
+END
+
+}
+
+function print_version() {
+	echo "Version: $VERSION"
+}
+
+function print_license() {
+	cat <<END
+This program is licensed under GPLv2
+Make sure you use this program in compliance with this license
+You should be able to see its full text in LICENSE file attached
+END
+}
+
+if [ -n "$ARG_ERROR" ] ; then print_arg_error ; print_help ; exit 1 ; fi
+if [ "$PRINT_HELP" = "y" ] ; then print_help ; exit 0 ; fi
+if [ "$PRINT_VERSION" = "y" ] ; then print_version ; exit 0 ; fi
+if [ "$PRINT_LICENSE" = "y" ] ; then print_license ; exit 0 ; fi
+
+# Now. As far as there's no real support for any non-blocking user input,
+# We are gonna use separate process for timed graphics and untimed 
+# keyboard input. (Would be solved better if read cmd itself was better)
+
+# first, create a temp file for keys
+
+[ $TEMPFILE_PROGRAM ] || TEMPFILE_PROGRAM="tempfile"
+
+KEY_TEMP=`${TEMPFILE_PROGRAM}`
+
+while [ -a KEY_TEMP ] ; do KEY_TEMP=`$TEMPFILE_PROGRAM` ; done
+touch $KEY_TEMP
+
+# Now we can start the real game in another thread, so the main one
+# stays enabled for receiving the blocking input.
+
+# Input loop is gonna be terminated when we receive a signal that child died
+# Ctrl+C's are handled too.
+
+QUIT="not yet, man..."  #if there's "y", game will end
+
+PARENT_PID=$$
+GAMEPID=
+
+# kill signal (game sends it to terminate the input handler
+function Terminate () {
+	QUIT="y"
+}
+
+# ^c can also happen, and we don't want any messages about hanging processes
+# trying to kill another nonexistent/hanging processes
+function CtrlC () {
+	QUIT="y"
+	echo "Caught interrupt, will exit."
+	kill -15 $GAMEPID
+}
+
+trap Terminate SIGTERM
+trap CtrlC SIGINT
+
+# Following functions belong to the second, "Game" thread
+
+function GameExitFunc () {
+	exit 0
+}
+
+# we trap it because otherwise it'd message us
+
+function rash_game_entry () {
+	trap GameExitFunc SIGTERM
+	source "./rash-lib" #load a library
+	rash_game  #real game
+	kill -15 $PARENT_PID #if the game ends, we send a signal to the parent
+}
+
+rash_game_entry & # run the game starter
+GAMEPID=$! #save its PID for later use:]
+
+# Input loop
+
+setterm -cursor off  #when cursor draws like mad, well, just turn it off.
+
+while [ "$QUIT" != "y" ] ; do
+	# we save key to file, so it can be read asynchronously by the game.
+	if read -s -n 1 -t 1 inputkey ; then
+		echo "$inputkey" > $KEY_TEMP   
+	fi
+done
+
+# Cleanup
+
+setterm -cursor on #restore the cursor
+
+rm -f $KEY_TEMP #remove temp file
+echo -ne "\033[0m"  #restore terminal colors
+echo "Thanks for playing RASH."  #become nice
+
+exit 0 #DIE, PHR34K!
+
