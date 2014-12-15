@@ -74,7 +74,7 @@ if [ "$PRINT_LICENSE" = "y" ] ; then print_license ; exit 0 ; fi
 
 # first, create a temp file for keys
 
-[ $TEMPFILE_PROGRAM ] || TEMPFILE_PROGRAM="tempfile"
+[ $TEMPFILE_PROGRAM ] || TEMPFILE_PROGRAM="mktemp"
 
 KEY_TEMP=`${TEMPFILE_PROGRAM}`
 
